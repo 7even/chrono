@@ -1,5 +1,8 @@
 (ns chrono.ops
-  (:require [chrono.util :as u]))
+  (:require [chrono.datetime :as cd]
+            [chrono.interval :as ci]
+            [chrono.util :as u]))
+
 
 (defn gen-norm [k k-next del m]
   (fn [x]
@@ -13,18 +16,23 @@
           (assoc x k (- (+ del r) m), k-next (+ s ds -1))))
       x)))
 
-(def normalize-ms (gen-norm :ms :sec 1000 0))
-(def normalize-s  (gen-norm :sec :min 60 0))
-(def normalize-mi (gen-norm :min :hour 60 0))
-(def normalize-h  (gen-norm :hour :day 24 0))
-(def normalize-m  (gen-norm :month :year 12 1))
+(def normalize-cd-ms (gen-norm ::cd/ms    ::cd/sec  1000 0))
+(def normalize-cd-s  (gen-norm ::cd/sec   ::cd/min  60   0))
+(def normalize-cd-mi (gen-norm ::cd/min   ::cd/hour 60   0))
+(def normalize-cd-h  (gen-norm ::cd/hour  ::cd/day  24   0))
+(def normalize-cd-m  (gen-norm ::cd/month ::cd/year 12   1))
+
+(def normalize-ci-ms (gen-norm ::ci/ms    ::ci/sec  1000 0))
+(def normalize-ci-s  (gen-norm ::ci/sec   ::ci/min  60   0))
+(def normalize-ci-mi (gen-norm ::ci/min   ::ci/hour 60   0))
+(def normalize-ci-h  (gen-norm ::ci/hour  ::ci/day  24   0))
 
 (defn days-and-months [y m d]
   (if (<= 1 d 27)
     [y m d]
     (cond
       (> d 0)
-      (let [num-days (u/days-in-month {:year y, :month m})
+      (let [num-days (u/days-in-month #::cd{:year y, :month m})
             dd (- d num-days)]
         (if (<= d num-days)
           [y m d]
@@ -34,56 +42,97 @@
 
       (<= d 0)
       (let [[num-days ny nm] (if (= m 1)
-                               [(u/days-in-month {:year (dec y), :month 12}) (dec y) 12]
-                               [(u/days-in-month {:year y, :month (dec m)}) y (dec m)])
+                               [(u/days-in-month #::cd{:year (dec y), :month 12}) (dec y) 12]
+                               [(u/days-in-month #::cd{:year y, :month (dec m)}) y (dec m)])
             dd (+ num-days d)]
         (if (< 0 dd)
           [ny nm dd]
           (days-and-months ny nm dd))))))
 
-(defn normalize-d  [x]
-  (if (and (:year x) (:month x) (:day x))
-    (let [[y m d] (days-and-months (:year x) (:month x) (:day x))]
-      (assoc x :year y :month m :day d))
+(defn normalize-cd-d [{::cd/keys [year month day] :as x}]
+  (if (and year month day)
+    (let [[y m d] (days-and-months year month day)]
+      (assoc x ::cd/year y, ::cd/month m, ::cd/day d))
     x))
 
 (defmulti normalize-rule (fn [unit _] unit))
-(defmethod normalize-rule :default [_ t] t)
-(defmethod normalize-rule :ms [_ t] (normalize-ms t))
-(defmethod normalize-rule :sec [_ t] (normalize-s t))
-(defmethod normalize-rule :min [_ t] (normalize-mi t))
-(defmethod normalize-rule :hour [_ t] (normalize-h t))
-(defmethod normalize-rule :day [_ t] (normalize-d t))
-(defmethod normalize-rule :month [_ t] (normalize-m t))
+(defmethod normalize-rule :default   [_ t] t)
 
-(def defaults-units  [[:year 0] [:month 1] [:day 1] [:hour 0] [:min 0] [:sec 0] [:ms 0]])
+(defmethod normalize-rule ::cd/ms    [_ t] (normalize-cd-ms t))
+(defmethod normalize-rule ::cd/sec   [_ t] (normalize-cd-s t))
+(defmethod normalize-rule ::cd/min   [_ t] (normalize-cd-mi t))
+(defmethod normalize-rule ::cd/hour  [_ t] (normalize-cd-h t))
+(defmethod normalize-rule ::cd/day   [_ t] (normalize-cd-d t))
+(defmethod normalize-rule ::cd/month [_ t] (normalize-cd-m t))
+
+(defmethod normalize-rule ::ci/ms    [_ t] (normalize-ci-ms t))
+(defmethod normalize-rule ::ci/sec   [_ t] (normalize-ci-s t))
+(defmethod normalize-rule ::ci/min   [_ t] (normalize-ci-mi t))
+(defmethod normalize-rule ::ci/hour  [_ t] (normalize-ci-h t))
+
+(def datetime-unit-defaults [[::cd/year 1]
+                             [::cd/month 1]
+                             [::cd/day 1]
+                             [::cd/hour 0]
+                             [::cd/min 0]
+                             [::cd/sec 0]
+                             [::cd/ms 0]])
+
+(def interval-unit-defaults [[::ci/day 0]
+                             [::ci/hour 0]
+                             [::ci/min 0]
+                             [::ci/sec 0]
+                             [::ci/ms 0]])
+
+(def unit-defaults
+  (concat datetime-unit-defaults
+          interval-unit-defaults))
+
 (defn custom-units [t]
-  (let [units-to-ignore (into #{} (conj (map first defaults-units) :tz))
+  (let [units-to-ignore (into #{} (conj (map first unit-defaults) ::cd/tz))
         current-units (into #{} (keys t))]
     (into [] (remove units-to-ignore current-units))))
 
 (defn ordered-rules [t]
-  (let [init [:ms :sec :min :hour :month]
+  (let [init [::cd/ms ::cd/sec ::cd/min ::cd/hour ::cd/month
+              ::ci/ms ::ci/sec ::ci/min ::ci/hour]
         with-custom (apply conj (custom-units t) init)]
-    (conj with-custom :day)))
+    (conj with-custom ::cd/day)))
 
 (declare to-utc)
 (declare to-tz)
 
-(defn normalize [{:keys [tz] :as t}]
+(defn normalize [{::cd/keys [tz] :as t}]
   (let [rules           (ordered-rules t)
         normalized-time (reduce (fn [t unit] (normalize-rule unit t)) t rules)]
     (into {}
-          (remove (every-pred (comp not #{:tz} key) (comp zero? val)))
+          (remove (every-pred (comp not #{::cd/tz} key) (comp zero? val)))
           normalized-time)))
 
 (def ^:private default-time {:year 0 :month 1 :day 1 :hour 0 :min 0 :sec 0 :ms 0})
 
-(defn- init-plus [{:keys [tz] :as r} i]
-  (let [i-r-tz (to-tz i tz)]
-    (into (if tz {:tz tz} {})
-          (map (fn [k] {k (+ (get r k 0) (get i-r-tz k 0))}))
-          (disj (set (concat (keys r) (keys i-r-tz))) :tz))))
+(defn- append-prefix-to-keys [m prefix]
+  (reduce-kv (fn [r k v]
+               (assoc r (keyword (name prefix) (name k)) v))
+             {}
+             m))
+
+(defn- init-plus [a b]
+  (let [{a-ch :chrono.datetime a-ci :chrono.interval} (u/group-keys a)
+        {b-ch :chrono.datetime b-ci :chrono.interval} (u/group-keys b)
+        tz (or (:tz a-ch) (:tz b-ch))
+        result-namespace (if (or a-ch b-ch)
+                           "chrono.datetime"
+                           "chrono.interval")]
+    (if (and a-ch b-ch)
+      (throw (ex-info "Can't add 2 dates." {:operation `+, :params [a-ch b-ch]}))
+      (cond-> (merge-with +
+                          (or a-ch a-ci)
+                          (or b-ch b-ci))
+        :always (-> (append-prefix-to-keys result-namespace)
+                    (dissoc ::cd/tz))
+        (and (some? tz)
+             (or a-ch b-ch)) (assoc ::cd/tz tz)))))
 
 (defn plus
   ([]           default-time)
@@ -99,16 +148,38 @@
    x
    [:year :month :day :hour :min :sec :ms]))
 
+(defn- init-minus [a b]
+  (let [{a-ch :chrono.datetime a-ci :chrono.interval} (u/group-keys a)
+        {b-ch :chrono.datetime b-ci :chrono.interval} (u/group-keys b)
+        tz (:tz a-ch)
+        b-ch (when (some? b-ch)
+               (-> (to-tz b tz)
+                   u/group-keys
+                   :chrono.datetime))
+        result-namespace (if (or (and a-ch b-ch)
+                                 (and a-ci b-ci))
+                           "chrono.interval"
+                           "chrono.datetime")]
+    (if (and a-ci b-ch)
+      (throw (ex-info "Can't subtract a date from an interval." {:operation `-, :params [a-ci b-ch]}))
+      (cond-> (merge-with +
+                          (or a-ch a-ci)
+                          (invert (or b-ch b-ci)))
+        true (dissoc :tz)
+        true (append-prefix-to-keys result-namespace)
+        (and (some? tz)
+             (and a-ch b-ci)) (assoc ::cd/tz tz)))))
+
 (defn minus
   ([]           default-time)
   ([x]          x)
-  ([x y]        (normalize (init-plus x (invert y))))
+  ([x y]        (normalize (init-minus x y)))
   ([x y & more] (reduce minus (minus x y) more)))
 
 (def to-normalized-utc (comp normalize #(to-tz % 0)))
 
 (defn- after? [t t']
-  (loop [[[p s] & ps] defaults-units]
+  (loop [[[p s] & ps] unit-defaults]
     (let [t->tp #(get % p s)
           tp (t->tp t)
           tp' (t->tp t')]
@@ -172,51 +243,42 @@
 
 (defmulti day-saving "[tz y]" (fn [tz _] tz))
 
-(defmethod day-saving
-  :ny
-  [_ y]
-  (assert (> y 2006) "Not impl.")
-  {:offset 5
-   :ds -1
-   :in {:year y :month 3 :day (u/more-or-eq y 3 0 8) :hour 2 :min 0}
-   :out {:year y :month 11 :day (u/more-or-eq y 11 0 1) :hour 2 :min 0}})
-
 (defn *day-saving-with-utc [tz y]
   (let [ds (day-saving tz y)]
     (assoc ds
-           :in-utc (plus (:in ds) {:hour (:offset ds)})
-           :out-utc (plus (:out ds) {:hour (+ (:offset ds) (:ds ds))}))))
+           :in-utc (plus (:in ds) {::ci/hour (:offset ds)})
+           :out-utc (plus (:out ds) {::ci/hour (+ (:offset ds) (:ds ds))}))))
 
 (def day-saving-with-utc (memoize *day-saving-with-utc))
 
 (defn kw-tz->utc0 [t] ;; TODO: make this work for any utc offset
-  (let [ds (day-saving-with-utc (:tz t) (:year t))
+  (let [ds (day-saving-with-utc (::cd/tz t) (::cd/year t))
         off (if (or (denormalised-lte t (:in ds)) (denormalised-gt t (:out ds)))
               (:offset ds)
               (+ (:offset ds) (:ds ds)))]
-    (-> (dissoc t :tz)
-        (plus {:hour off}))))
+    (-> (dissoc t ::cd/tz)
+        (plus {::ci/hour off}))))
 
 (defn utc0->kw-tz [t tz] ;; TODO: make this work for any utc offset
-  (let [ds (day-saving-with-utc tz (:year t))
+  (let [ds (day-saving-with-utc tz (::cd/year t))
         off (if (or (denormalised-lte t (:in-utc ds)) (denormalised-gt t (:out-utc ds)))
               (:offset ds)
               (+ (:offset ds) (:ds ds)))]
-    (-> (plus t {:hour (- off)})
-        (assoc :tz tz))))
+    (-> (plus t {::ci/hour (- off)})
+        (assoc ::cd/tz tz))))
 
-(defn to-tz [{:keys [tz] :as t} dtz]
+(defn to-tz [{::cd/keys [tz] :as t} dtz]
   (cond
-    (nil? dtz) (dissoc t :tz)
-    (nil? tz)  (assoc t :tz dtz)
+    (nil? dtz) (dissoc t ::cd/tz)
+    (nil? tz)  (assoc t ::cd/tz dtz)
     :else
     (let [d (- (if (keyword? dtz) 0 dtz)
                (if (keyword? tz)  0 tz))]
       (cond-> t
         (keyword? tz)   kw-tz->utc0
-        :always         (dissoc :tz)
-        (not (zero? d)) (plus {:hour d})
+        :always         (dissoc ::cd/tz)
+        (not (zero? d)) (plus {::ci/hour d})
         (keyword? dtz)  (utc0->kw-tz dtz)
-        :always         (assoc :tz dtz)))))
+        :always         (assoc ::cd/tz dtz)))))
 
 (defn to-utc [t] (to-tz t 0))

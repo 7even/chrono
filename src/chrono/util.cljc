@@ -1,10 +1,22 @@
 (ns chrono.util
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [chrono.datetime :as cd]
+            [chrono.interval :as ci]))
 
+(defn group-keys [m]
+  (reduce-kv (fn [result k v]
+               (let [key-namespace (-> k namespace keyword)
+                     normalized-key (-> k name keyword)]
+                 (assoc-in result
+                           [key-namespace normalized-key]
+                           v)))
+             {}
+             m))
+             
 (defmulti locale (fn[x] x))
 
 (def locale-en
-  {:month
+  {::cd/month
    {1  {:name "January" :short "Jan" :regex "(?i)jan\\S*"}
     2  {:name "February" :short "Feb" :regex "(?i)feb\\S*"}
     3  {:name "March" :short "Mar" :regex "(?i)mar\\S*"}
@@ -22,27 +34,33 @@
 (defmethod locale :default [_] locale-en)
 
 (def parse-patterns
-  {:year  "(?:\\d\\d\\d\\d|\\d\\d\\d|\\d\\d|\\d)"
-   :month "(?:1[0-2]|0[1-9]|[1-9]|\\p{L}+\\.?)"
-   :day   "(?:3[0-1]|[1-2]\\d|0[1-9]|[1-9])"
-   :hour  "(?:2[0-3]|[0-1]\\d|\\d)"
-   :min   "(?:[0-5]\\d|\\d)"
-   :sec   "(?:[0-5]\\d|\\d)"
-   :ms    "(?:\\d\\d\\d|\\d\\d|\\d)"})
+  {::cd/year  "(?:\\d\\d\\d\\d|\\d\\d\\d|\\d\\d|\\d)"
+   ::cd/month "(?:1[0-2]|0[1-9]|[1-9]|\\p{L}+\\.?)"
+   ::cd/day   "(?:3[0-1]|[1-2]\\d|0[1-9]|[1-9])"
+   ::cd/hour  "(?:2[0-3]|[0-1]\\d|\\d)"
+   ::cd/min   "(?:[0-5]\\d|\\d)"
+   ::cd/sec   "(?:[0-5]\\d|\\d)"
+   ::cd/ms    "(?:\\d\\d\\d|\\d\\d|\\d)"
+   ::ci/day   "(?:[0-9]+)"
+   ::ci/hour  "(?:2[0-3]|[0-1]\\d|\\d)"
+   ::ci/min   "(?:[0-5]\\d|\\d)"
+   ::ci/sec   "(?:[0-5]\\d|\\d)"
+   ::ci/ms    "(?:\\d\\d\\d|\\d\\d|\\d)"})
 
 (def format-patterns
-  {:year  4
-   :month 2
-   :day   2
-   :hour  2
-   :min   2
-   :sec   2
-   :ms    3})
+  #::cd{:year  4
+        :month 2
+        :day   2
+        :hour  2
+        :min   2
+        :sec   2
+        :ms    3})
 
 (defn sanitize [s]
   (str/replace s #"[-.\+*?\[^\]$(){}=!<>|:\\]" #(str \\ %)))
 
-(def iso-fmt [:year "-" :month "-" :day "T" :hour ":" :min ":" :sec "." :ms])
+(def iso-fmt [::cd/year "-" ::cd/month "-" ::cd/day "T"
+              ::cd/hour ":" ::cd/min ":" ::cd/sec "." ::cd/ms])
 
 (defn parse-name [name unit lang]
   (-> (locale lang)
@@ -65,7 +83,7 @@
        (or (pos? (rem y 100))
            (zero? (rem y 400)))))
 
-(defn days-in-month [{m :month, y :year}]
+(defn days-in-month [{m ::cd/month, y ::cd/year}]
   (cond
     (contains? #{4 6 9 11} m) 30
     (and (leap-year? y) (= 2 m)) 29
@@ -131,10 +149,10 @@
 (def pad-zero (partial pad-str \0))
 
 (defn seconds [d]
-  (+ (* (dec (:day d)) 60 60 24)
-     (* (:hour d) 60 60)
-     (* (:min d) 60)
-     (:sec d)))
+  (+ (* (dec (::cd/day d)) 60 60 24)
+     (* (::cd/hour d) 60 60)
+     (* (::cd/min d) 60)
+     (::cd/sec d)))
 
 (defn day-of-week
   "m 1-12; y > 1752"
