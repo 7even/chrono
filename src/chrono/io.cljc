@@ -2,6 +2,7 @@
   (:require [chrono.util :as util]
             [chrono.ops :as ops]
             [clojure.string :as str])
+  (:import java.util.Date)
   (:refer-clojure :exclude [format]))
 
 (defn- format-str [v [fmt & fmt-args] lang]
@@ -91,3 +92,21 @@
                                 (+ days (util/days-in-month
                                          {:month month :year (:year date)}))) % months))
         util/seconds)))
+
+(defn from-epoch2 [e]
+  (let [d (Date. e)]
+    {:year (+ 1900 (.getYear d))
+     :month (inc (.getMonth d))
+     :day (.getDate d)
+     :hour (.getHours d)
+     :min (.getMinutes d)
+     :sec (.getSeconds d)}))
+
+(defn to-epoch2 [{:keys [year month day hour min sec]}]
+  (let [d (Date. (- year 1900)
+                 (dec month)
+                 day
+                 hour
+                 min
+                 sec)]
+    (.getTime d)))
