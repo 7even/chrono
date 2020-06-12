@@ -2,7 +2,8 @@
   (:require [chrono.util :as util]
             [chrono.ops :as ops]
             [clojure.string :as str])
-  (:import java.util.Date)
+  (:import [java.time Instant OffsetDateTime ZoneOffset]
+           java.util.Date)
   (:refer-clojure :exclude [format]))
 
 (defn- format-str [v [fmt & fmt-args] lang]
@@ -110,3 +111,23 @@
                  min
                  sec)]
     (.getTime d)))
+
+(defn to-epoch3 [{:keys [year month day hour min sec ms tz]}]
+  (let [offset (ZoneOffset/ofHours tz)
+        dt (OffsetDateTime/of year month day hour min sec (* ms 1000000) offset)]
+    {:seconds (.toEpochSecond dt)
+     :nano (.getNano dt)
+     :offset-hours tz}))
+
+(defn from-epoch3 [{:keys [seconds nano offset-hours]}]
+  (let [offset (ZoneOffset/ofHours offset-hours)
+        inst (Instant/ofEpochSecond seconds nano)
+        dt (OffsetDateTime/ofInstant inst offset)]
+    {:year (.getYear dt)
+     :month (.getMonthValue dt)
+     :day (.getDayOfMonth dt)
+     :hour (.getHour dt)
+     :min (.getMinute dt)
+     :sec (.getSecond dt)
+     :ms (int (/ (.getNano dt) 1000000))
+     :tz offset-hours}))
