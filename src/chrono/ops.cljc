@@ -155,11 +155,28 @@
           (map (fn [k] {k (+ (get r k 0) (get i-r-tz k 0))}))
           (disj (set (concat (keys r) (keys i-r-tz))) :tz))))
 
+(defn plus-epoch [dt i]
+  (let [dt' (datetime->epoch dt)
+        i' (interval->epoch i)
+        result {:epoch-milli (+ (:epoch-milli dt')
+                                (:epoch-milli i'))
+                :offset-hours (:offset-hours dt')}]
+    (epoch->datetime result)))
+
 (defn plus
   ([]           default-time)
   ([x]          x)
   ([x y]        (normalize (init-plus x y)))
   ([x y & more] (reduce plus (plus x y) more)))
+
+(comment
+  (time (dotimes [_ 100000]
+          (plus {:year 2020 :month 6 :day 14 :hour 15 :min 30}
+                {:day 5 :hour 4}))) ;; "Elapsed time: 1084.123483 msecs"
+  (time (dotimes [_ 100000]
+          (plus-epoch {:year 2020 :month 6 :day 14 :hour 15 :min 30}
+                      {:day 5 :hour 4}))) ;; "Elapsed time: 379.109875 msecs"
+)
 
 (defn invert [x]
   (reduce
