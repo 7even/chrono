@@ -1,5 +1,68 @@
 (ns chrono.ops
-  (:require [chrono.util :as u]))
+  (:require [chrono.util :as u]
+            [clojure.set :refer [difference]])
+  (:import [java.time Instant OffsetDateTime ZoneOffset]))
+
+(defn- datetime-without-defaults [dt]
+  (let [defaults {:year 1 :month 1 :day 1 :hour 0 :min 0 :sec 0 :ms 0 :tz 0}]
+    (into {}
+          (remove (fn [[k v]]
+                    (= v (get defaults k))))
+          dt)))
+
+(defn- interval-without-defaults [i]
+  (let [defaults {:day 0 :hour 0 :min 0 :sec 0 :ms 0}]
+    (into {}
+          (remove (fn [[k v]]
+                    (= v (get defaults k))))
+          i)))
+
+(defn datetime->epoch [{:keys [year month day hour min sec ms tz]
+                        :or {year 1 month 1 day 1 hour 0 min 0 sec 0 ms 0 tz 0}}]
+  (let [offset (ZoneOffset/ofHours tz)
+        dt (OffsetDateTime/of year month day hour min sec (* ms 1000000) offset)]
+    {:epoch-milli (.toEpochMilli (.toInstant dt))
+     :offset-hours tz}))
+
+(defn epoch->datetime [{:keys [epoch-milli offset-hours]}]
+  (let [offset (ZoneOffset/ofHours offset-hours)
+        inst (Instant/ofEpochMilli epoch-milli)
+        dt (OffsetDateTime/ofInstant inst offset)]
+    (-> {:year (.getYear dt)
+         :month (.getMonthValue dt)
+         :day (.getDayOfMonth dt)
+         :hour (.getHour dt)
+         :min (.getMinute dt)
+         :sec (.getSecond dt)
+         :ms (int (/ (.getNano dt) 1000000))
+         :tz offset-hours}
+        datetime-without-defaults)))
+
+(def coef
+  {:day  (* 1000 60 60 24)
+   :hour (* 1000 60 60)
+   :min  (* 1000 60)
+   :sec  (* 1000)})
+
+(defn interval->epoch [{:keys [day hour min sec ms]
+                        :or {day 0 hour 0 min 0 sec 0 ms 0}
+                        :as interval}]
+  (assert (empty? (difference (-> interval keys set)
+                              #{:day :hour :min :sec :ms}))
+          "interval->epoch doesn't support intervals with months and/or years")
+  {:epoch-milli (+ (* day (:day coef))
+                   (* hour (:hour coef))
+                   (* min (:min coef))
+                   (* sec (:sec coef))
+                   ms)})
+
+(defn epoch->interval [{:keys [epoch-milli]}]
+  (-> {:day (quot epoch-milli (:day coef))
+       :hour (quot (rem epoch-milli (:day coef)) (:hour coef))
+       :min (quot (rem epoch-milli (:hour coef)) (:min coef))
+       :sec (quot (rem epoch-milli (:min coef)) (:sec coef))
+       :ms (rem epoch-milli (:sec coef))}
+      interval-without-defaults))
 
 (defn gen-norm [unit next-unit proportion min-value next-min-value]
   (fn [t]
@@ -79,6 +142,10 @@
     (into {}
           (remove (every-pred (comp not #{:tz} key) (comp zero? val)))
           normalized-time)))
+
+(comment
+  (defn normalize [t]
+    (-> t datetime->epoch epoch->datetime)))
 
 (def ^:private default-time {:year 0 :month 1 :day 1 :hour 0 :min 0 :sec 0 :ms 0})
 
