@@ -1,7 +1,7 @@
 (ns chrono.ops
   (:require [chrono.util :as u]
             [clojure.set :refer [difference]])
-  (:import [java.time Instant OffsetDateTime ZoneOffset]))
+  #?(:clj (:import [java.time Instant OffsetDateTime ZoneOffset])))
 
 (defn- datetime-without-defaults [dt]
   (let [defaults {:year 1 :month 1 :day 1 :hour 0 :min 0 :sec 0 :ms 0 :tz 0}]
@@ -17,32 +17,46 @@
                     (= v (get defaults k))))
           i)))
 
-(defn datetime->epoch [{:keys [year month day hour min sec ms tz]
-                        :or {year 1 month 1 day 1 hour 0 min 0 sec 0 ms 0 tz 0}}]
-  (let [offset (ZoneOffset/ofHours tz)
-        dt (OffsetDateTime/of year month day hour min sec (* ms 1000000) offset)]
-    {:epoch-milli (.toEpochMilli (.toInstant dt))
-     :offset-hours tz}))
-
-(defn epoch->datetime [{:keys [epoch-milli offset-hours]}]
-  (let [offset (ZoneOffset/ofHours offset-hours)
-        inst (Instant/ofEpochMilli epoch-milli)
-        dt (OffsetDateTime/ofInstant inst offset)]
-    (-> {:year (.getYear dt)
-         :month (.getMonthValue dt)
-         :day (.getDayOfMonth dt)
-         :hour (.getHour dt)
-         :min (.getMinute dt)
-         :sec (.getSecond dt)
-         :ms (int (/ (.getNano dt) 1000000))
-         :tz offset-hours}
-        datetime-without-defaults)))
-
 (def coef
   {:day  (* 1000 60 60 24)
    :hour (* 1000 60 60)
    :min  (* 1000 60)
    :sec  (* 1000)})
+
+(defn datetime->epoch [{:keys [year month day hour min sec ms tz]
+                        :or {year 1 month 1 day 1 hour 0 min 0 sec 0 ms 0 tz 0}}]
+  #?(:clj (let [offset (ZoneOffset/ofHours tz)
+                dt (OffsetDateTime/of year month day hour min sec (* ms 1000000) offset)]
+            {:epoch-milli (.toEpochMilli (.toInstant dt))
+             :offset-hours tz})
+     :cljs (let [offset-minutes (.getTimezoneOffset (js/Date.))
+                 dt (js/Date. year (dec month) day (- hour tz) (- min offset-minutes) sec ms)]
+             {:epoch-milli (.getTime dt)
+              :offset-hours tz})))
+
+(defn epoch->datetime [{:keys [epoch-milli offset-hours]}]
+  #?(:clj (let [offset (ZoneOffset/ofHours offset-hours)
+                inst (Instant/ofEpochMilli epoch-milli)
+                dt (OffsetDateTime/ofInstant inst offset)]
+            (-> {:year (.getYear dt)
+                 :month (.getMonthValue dt)
+                 :day (.getDayOfMonth dt)
+                 :hour (.getHour dt)
+                 :min (.getMinute dt)
+                 :sec (.getSecond dt)
+                 :ms (int (/ (.getNano dt) 1000000))
+                 :tz offset-hours}
+                datetime-without-defaults))
+     :cljs (let [dt (js/Date. (+ epoch-milli (* offset-hours (:hour coef))))]
+             (-> {:year (.getUTCFullYear dt)
+                  :month (inc (.getUTCMonth dt))
+                  :day (.getUTCDate dt)
+                  :hour (.getUTCHours dt)
+                  :min (.getUTCMinutes dt)
+                  :sec (.getUTCSeconds dt)
+                  :ms (.getMilliseconds dt)
+                  :tz offset-hours}
+                 datetime-without-defaults))))
 
 (defn interval->epoch [{:keys [day hour min sec ms]
                         :or {day 0 hour 0 min 0 sec 0 ms 0}
