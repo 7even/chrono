@@ -300,6 +300,9 @@
            (sut/plus #::cd{:year 2019, :month 12, :day 10, :hour 13, :min 17, :sec 50, :ms 911}
                      #::ci{:hour 2})))
 
+    (is (= #::cd{:year 2020 :month 2}
+           (sut/plus #::cd{:year 2020 :month 2} #::ci{:day 0})))
+
     (is (= #::cd{:hour 14 :tz 2}
            (sut/plus #::cd{:hour 4 :tz 2} #::ci{:hour 10})))
 
@@ -313,8 +316,8 @@
            (sut/plus #::ci{:hour 1 :tz 3} #::cd{:hour 1 :tz -2})))
 
     (testing "with custom units"
-      (def normalize-cd-ns (sut/gen-norm ::cd/ns ::cd/ms 1000000 0))
-      (def normalize-ci-ns (sut/gen-norm ::ci/ns ::ci/ms 1000000 0))
+      (def normalize-cd-ns (sut/gen-norm ::cd/ns ::cd/ms 1000000 0 0))
+      (def normalize-ci-ns (sut/gen-norm ::ci/ns ::ci/ms 1000000 0 0))
 
       (defmethod sut/normalize-rule ::cd/ns [_ t] (normalize-cd-ns t))
       (defmethod sut/normalize-rule ::ci/ns [_ t] (normalize-ci-ns t))
@@ -340,11 +343,27 @@
     (is (= #::cd{:year 2015, :month 12, :day 31, :hour 23, :min 30}
            (sut/minus #::cd{:year 2016 :month 12 :day 31 :hour 23 :min 30}
                       #::ci{:day 366})))
+    (is (= #::cd{:year 2020 :month 1 :day 31}
+           (sut/minus #::cd{:year 2020 :month 2}
+                      #::ci{:day 1})))
+    (is (= #::cd{:year 2020 :month 2}
+           (sut/minus #::cd{:year 2020 :month 2}
+                      #::ci{:day 0})))
     (is (= #::cd{:tz -2}
            (sut/minus #::cd{:hour 2 :tz -2} #::ci{:hour 2})))
     (is (= #::ci{:day 2 :hour 1}
            (sut/minus #::cd{:year 2020 :month 6 :day 7 :hour 15 :min 30 :tz 3}
                       #::cd{:year 2020 :month 6 :day 5 :hour 13 :min 30 :tz 2})))))
+
+(deftest normalize-test
+  (is (= #::cd{:year 2019 :month 11 :day 10}
+         (sut/normalize #::cd{:year 2019 :month 11 :day 10})))
+  (is (= #::cd{:year 2019 :month 12 :day 10}
+         (sut/normalize #::cd{:year 2019 :month 12 :day 10})))
+  (is (= #::cd{:year 2020 :month 12 :day 10}
+         (sut/normalize #::cd{:year 2019 :month 24 :day 10})))
+  (is (= #::cd{:year 2021 :month 1 :day 10}
+         (sut/normalize #::cd{:year 2019 :month 25 :day 10}))))
 
 (deftest test-timezones
   (testing "tz comparison"

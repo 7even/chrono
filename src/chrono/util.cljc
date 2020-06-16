@@ -15,6 +15,12 @@
              
 (defmulti locale (fn[x] x))
 
+(defn NaN?
+  "Test if this number is nan
+   Nan is the only value for which equality is false"
+  [x]
+  (false? (== x x)))
+
 (def locale-en
   {::cd/month
    {1  {:name "January" :short "Jan" :regex "(?i)jan\\S*"}
@@ -35,13 +41,14 @@
 
 (def parse-patterns
   {::cd/year  "(?:\\d\\d\\d\\d|\\d\\d\\d|\\d\\d|\\d)"
-   ::cd/month "(?:1[0-2]|0[1-9]|[1-9]|\\p{L}+\\.?)"
+   ::cd/month #?(:clj  "(?:1[0-2]|0[1-9]|[1-9]|\\p{L}+\\.?)"
+                 :cljs "(?:1[0-2]|0[1-9]|[1-9]|\\w+\\.?)") ;; TODO: can't get \p{L} work in cljs
    ::cd/day   "(?:3[0-1]|[1-2]\\d|0[1-9]|[1-9])"
    ::cd/hour  "(?:2[0-3]|[0-1]\\d|\\d)"
    ::cd/min   "(?:[0-5]\\d|\\d)"
    ::cd/sec   "(?:[0-5]\\d|\\d)"
    ::cd/ms    "(?:\\d\\d\\d|\\d\\d|\\d)"
-   ::ci/day   "(?:[0-9]+)"
+   ::ci/day   "(?:3[0-1]|[1-2]\\d|0[1-9]|[1-9])"
    ::ci/hour  "(?:2[0-3]|[0-1]\\d|\\d)"
    ::ci/min   "(?:[0-5]\\d|\\d)"
    ::ci/sec   "(?:[0-5]\\d|\\d)"
@@ -62,17 +69,17 @@
 (def iso-fmt [::cd/year "-" ::cd/month "-" ::cd/day "T"
               ::cd/hour ":" ::cd/min ":" ::cd/sec "." ::cd/ms])
 
+(defn parse-int [x]
+  (when (string? x)
+    #?(:clj (try (Integer/parseInt x) (catch NumberFormatException e nil))
+       :cljs (let [x* (js/parseInt x)] (when-not (NaN? x*) x*)))))
+
 (defn parse-name [name unit lang]
   (-> (locale lang)
       (get unit)
       (->> (filter #(re-matches (-> % val :regex re-pattern) name)))
       doall
       ffirst))
-
-(defn parse-int [x]
-  (when (string? x)
-    #?(:clj (try (Integer/parseInt x) (catch NumberFormatException e nil))
-       :cljs (js/parseInt x))))
 
 (defn parse-val [x unit lang]
   (or (parse-int x)
